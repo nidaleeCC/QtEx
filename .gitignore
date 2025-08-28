@@ -1,0 +1,11 @@
+# 忽略 Qt 的 build 目录
+build/
+*.o
+*.obj
+*.exe
+*.dll
+*.pdb
+*.lib
+*.so
+*.user
+*.dylib
