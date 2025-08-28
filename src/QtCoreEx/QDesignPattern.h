@@ -444,14 +444,14 @@ private:
 /**
  * @brief PIMPL的声明宏,查看示例用法
  */
-#define PIMPL_DECL \
+#define QEX_PIMPL_DECL \
 struct pimpl; \
-hr::Pimplptr<pimpl> d;
+Pimplptr<pimpl> d;
 
 /**
  * @brief PIMPL的导入宏,查看示例用法
  */
-#define PIMPL_IMPORT(classname) \
+#define QEX_PIMPL_IMPORT(classname) \
 struct classname::pimpl
 
 
