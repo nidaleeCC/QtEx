@@ -1,5 +1,5 @@
-﻿#ifndef DesignPattern
-#define DesignPattern
+﻿#ifndef DesignPattern_H
+#define DesignPattern_H
 
 #include <algorithm> // std::find
 #include <stdexcept> // std::invalid_argument

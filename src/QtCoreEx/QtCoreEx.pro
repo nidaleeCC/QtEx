@@ -1,9 +1,19 @@
 QT += core
 
+EX_TEXT = 1
+message("build mode: $$EX_TEXT")
+
+equals(EX_TEXT,1){
+TEMPLATE = app      # 生成可执行程序 exe
+SOURCES += \
+    $$PWD/../test/testMain.cpp
+}else{
 TEMPLATE = lib      # 表示生成库
 CONFIG += dll       # 生成动态库（DLL）
+}
 
 TARGET = QtCoreEx  # DLL
+INCLUDEPATH += $$PWD
 
 DEFINES += QTCOREX_LIBRARY
 

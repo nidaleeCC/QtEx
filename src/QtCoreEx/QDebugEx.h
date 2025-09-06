@@ -10,12 +10,12 @@ namespace Qt{
         console       = 0x1,
         file          = 0x2,
         udp           = 0x4,
-        Placeholder_1 = 0x8,
-        Placeholder_2 = 0x10,
-        Placeholder_3 = 0x20,
-        Placeholder_4 = 0x40,
-        Placeholder_5 = 0x80,
-        Placeholder_6 = 0x100,
+        tcp           = 0x8,
+        Placeholder_1 = 0x10,
+        Placeholder_2 = 0x20,
+        Placeholder_3 = 0x40,
+        Placeholder_4 = 0x80,
+        Placeholder_5 = 0x100,
     };
 }
 
@@ -23,11 +23,14 @@ class QDebugSink;//基类
 class QDebugConsoleSink;    //控制台
 class QDebugFileSink;       //文件
 class QDebugUdpSink;//保留类名
+class QDebugTcpSink;//保留类名
 
 class QTCOREX_EXPORT QDebugEx : public Singleton<QDebugEx>
 {
     friend class Singleton<QDebugEx>;
+    friend void ExMessageHandler(QtMsgType type, const QMessageLogContext &,const QString &msg);
     QEX_PIMPL_DECL
+    QDebugEx();
 public:
     /**
      * @brief initConfig 初始化日志配置
@@ -41,7 +44,7 @@ public:
      * @param flag     标志不能是内置的标志位,必须要大于0x100
      * @param sink     需要实现out()函数的sink类
      */
-    void addSink(int flag,QDebugSink* sink);
+    void addSink(QDebugSink* sink);
 
     /**
      * @brief sink 获取存在的sink,不存在返回nullptr
@@ -59,11 +62,31 @@ public:
     QDebugSink* removeSink(int flag);
 };
 
+class QDebugFormatAttr
+{
+public:
+    QDebugFormatAttr(const QString& attrName);
+    virtual ~QDebugFormatAttr() = default;
+
+    virtual QString format(const QString& msg);
+
+    void reset(const std::function<QString(const QString&)>& formatFun);
+protected:
+    QString m_attrName;
+    std::function<QString(const QString&)> m_fun;
+};
+
+
 /* QDebugSink */
 
 class QTCOREX_EXPORT QDebugSink
 {
+
+    friend void ExMessageHandler(QtMsgType type, const QMessageLogContext &,const QString &msg);
+    QEX_PIMPL_DECL
 public:
+    QDebugSink(Qt::QDebugExSinkFlag flag);
+
     virtual ~QDebugSink() = default;
 
     void setEnable(bool isEnable);
@@ -76,7 +99,7 @@ public:
 
     bool registerConfig(const QString& key,const QString& value);
 protected:
-    virtual void out(const QVariant& data) = 0;
+    virtual void out(const QString& fmtMsg) = 0;
 };
 
 
@@ -84,15 +107,16 @@ protected:
 class QTCOREX_EXPORT QDebugConsoleSink : public QDebugSink
 {
 public:
-    QDebugConsoleSink():QDebugSink(){}
+    QDebugConsoleSink():QDebugSink(Qt::console){}
     virtual ~QDebugConsoleSink(){}
+    virtual void out(const QString& fmtMsg)override;
 };
 
 
 class QTCOREX_EXPORT QDebugFileSink : public QDebugSink
 {
 public:
-    QDebugFileSink():QDebugSink(){}
+    QDebugFileSink():QDebugSink(Qt::file){}
     virtual ~QDebugFileSink(){}
 
 };
