@@ -1,6 +1,6 @@
 ﻿#include "QDebugEx.h"
 #include <QtCore/QSharedPointer>
-
+#include <QtCore/QThread>
 
 void ExMessageHandler(QtMsgType type, const QMessageLogContext &context,const QString &msg);
 
@@ -18,30 +18,32 @@ QDebugEx::QDebugEx()
 
 void QDebugEx::initConfig(const QString& filePath,Qt::QDebugExSinkFlag sinkFlag)
 {
-    qInstallMessageHandler(ExMessageHandler);
-
-    if(sinkFlag | static_cast<int>(Qt::console))
+    Q_UNUSED(filePath)
+    if(sinkFlag & static_cast<int>(Qt::console))
         d->m_sinks << pimpl::QDebugSinkPtr(new QDebugConsoleSink);
+
+    if(d->m_sinks.size())
+        qInstallMessageHandler(ExMessageHandler);
 }
 
 
 QDebugFormatAttr::QDebugFormatAttr(const QString& attrName)
-    :m_attrName(attrName),m_fun(nullptr)
+    :m_attrName(attrName)
 {
 
 }
 
-QString QDebugFormatAttr::format(const QString& msg)
+QString QDebugFormatAttr::attrName() const
 {
-    if(m_fun)
-        return m_fun(msg);
+    return m_attrName;
+}
+
+QString QDebugFormatAttr::format(const QMessageLogContext & context,const QString& msg)
+{
+    Q_UNUSED(context)
     return QString(m_attrName).arg(msg);
 }
 
-void QDebugFormatAttr::reset(const std::function<QString(const QString&)>& formatFun)
-{
-    m_fun = formatFun;
-}
 
 
 class QDebugNoFormartAttr : public QDebugFormatAttr
@@ -54,11 +56,11 @@ public:
 
     }
 
-    virtual QString format(const QString& msg)override
+    virtual QString format(const QMessageLogContext & context,const QString& msg)override
     {
-        if(m_fun)
-            return m_fun(msg);
-        return QDebugFormatAttr::format(QString::number(m_count++));
+        Q_UNUSED(context)
+        Q_UNUSED(msg)
+        return QDebugFormatAttr::format(context,QString::number(m_count++));
     }
 };
 
@@ -72,11 +74,76 @@ public:
 
     }
 
-    virtual QString format(const QString& msg)override
+    virtual QString format(const QMessageLogContext & context,const QString& msg)override
     {
-        if(m_fun)
-            return m_fun(msg);
-        return QDebugFormatAttr::format(msg);
+        Q_UNUSED(context)
+        return QDebugFormatAttr::format(context,QString("\033[31m%1\033[0m").arg(msg));
+    }
+};
+
+class QDebugFuncFormartAttr : public QDebugFormatAttr
+{
+public:
+    QDebugFuncFormartAttr()
+        :QDebugFormatAttr("[func：%1] ")
+    {
+
+    }
+
+    virtual QString format(const QMessageLogContext & context,const QString& msg)override
+    {
+        Q_UNUSED(msg)
+        return QDebugFormatAttr::format(context,context.function);
+    }
+};
+
+class QDebugFileFormartAttr : public QDebugFormatAttr
+{
+public:
+    QDebugFileFormartAttr()
+        :QDebugFormatAttr("[file:%1] ")
+    {
+
+    }
+
+    virtual QString format(const QMessageLogContext & context,const QString& msg)override
+    {
+        Q_UNUSED(msg)
+        return QDebugFormatAttr::format(context,QString(context.file).split('\\').last());
+    }
+};
+
+class QDebugLineFormartAttr : public QDebugFormatAttr
+{
+public:
+    QDebugLineFormartAttr()
+        :QDebugFormatAttr("[line:%1] ")
+    {
+
+    }
+
+    virtual QString format(const QMessageLogContext & context,const QString& msg)override
+    {
+        Q_UNUSED(msg)
+        return QDebugFormatAttr::format(context,QString::number(context.line));
+    }
+};
+
+class QDebugThreadFormartAttr : public QDebugFormatAttr
+{
+public:
+    QDebugThreadFormartAttr()
+        :QDebugFormatAttr("[thread:%1] ")
+    {
+
+    }
+
+    virtual QString format(const QMessageLogContext & context,const QString& msg)override
+    {
+        Q_UNUSED(context)
+        Q_UNUSED(msg)
+        intptr_t tid = reinterpret_cast<intptr_t>(reinterpret_cast<int*>(QThread::currentThreadId()));
+        return QDebugFormatAttr::format(context,QString::number(tid));
     }
 };
 
@@ -91,6 +158,10 @@ QEX_PIMPL_IMPORT(QDebugSink)
 
     pimpl(Qt::QDebugExSinkFlag flag)
         :m_flag(flag),m_isEnable(true),m_formats({QDebugFormatAttrPtr(new QDebugNoFormartAttr)
+                                                 ,QDebugFormatAttrPtr(new QDebugThreadFormartAttr)
+                                                 ,QDebugFormatAttrPtr(new QDebugFuncFormartAttr)
+                                                 ,QDebugFormatAttrPtr(new QDebugFileFormartAttr)
+                                                 ,QDebugFormatAttrPtr(new QDebugLineFormartAttr)
                                                  ,QDebugFormatAttrPtr(new QDebugMsgFormartAttr)
           })
     {
@@ -100,9 +171,9 @@ QEX_PIMPL_IMPORT(QDebugSink)
     QString attrToFmt(const QMessageLogContext & context,const QString &msg)
     {
         QString fmt;
-        for(const auto& pAttr : m_formats)
+        for(const auto& pAttr : qAsConst(m_formats))
         {
-            fmt += pAttr->format(msg);
+            fmt += pAttr->format(context,msg);
         }
         return fmt;
     }
@@ -115,6 +186,10 @@ QDebugSink::QDebugSink(Qt::QDebugExSinkFlag flag)
 {
 }
 
+QList<QSharedPointer<QDebugFormatAttr>>& QDebugSink::attrs()
+{
+    return d->m_formats;
+}
 
 
 void QDebugConsoleSink::out(const QString& fmtMsg)
@@ -124,13 +199,22 @@ void QDebugConsoleSink::out(const QString& fmtMsg)
 
 void ExMessageHandler(QtMsgType type, const QMessageLogContext & context,const QString &msg)
 {
-    for(const QDebugEx::pimpl::QDebugSinkPtr& pSink : QDebugEx::getSingleton().d->m_sinks)
+    for(const QDebugEx::pimpl::QDebugSinkPtr& pSink : qAsConst(QDebugEx::getSingleton().d->m_sinks))
     {
         switch (type)
         {
             case QtDebugMsg:
             {
                 pSink->out(pSink->d->attrToFmt(context,msg));
+                break;
+            }
+            case QtWarningMsg:
+            case QtCriticalMsg:
+            case QtFatalMsg:
+            case QtInfoMsg:
+            default:
+            {
+                fprintf(stdout,"%s\n",msg.toLocal8Bit().constData());
                 break;
             }
         }
