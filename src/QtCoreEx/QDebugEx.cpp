@@ -26,6 +26,11 @@ QDebugEx::QDebugEx()
 
 }
 
+QDebugEx *QDebugEx::instance()
+{
+    return Singleton<QDebugEx>::instance();
+}
+
 void QDebugEx::initLog(Qt::QDebugExSinkFlags sinkFlag)
 {
     g_mainThreadID = reinterpret_cast<intptr_t>(reinterpret_cast<int*>(QThread::currentThreadId()));
@@ -54,7 +59,7 @@ bool QDebugEx::addSink(QDebugSink *sink)
 QDebugSink* QDebugEx::sink(int flag)
 {
     QDebugSink* dSink = nullptr;
-    for(const pimpl::QDebugSinkPtr& pSink : qAsConst(d->m_sinks))
+    for(const pimpl::QDebugSinkPtr& pSink : d->m_sinks)
     {
         if(pSink->flag() == flag)
         {
@@ -283,11 +288,12 @@ QDebugConsoleSink::QDebugConsoleSink()
 void QDebugConsoleSink::out(const QString& fmtMsg)
 {
     fprintf(stdout, "%s\n", fmtMsg.toLocal8Bit().constData());
+    fflush(stdout);
 }
 
 void ExMessageHandler(QtMsgType type, const QMessageLogContext & context,const QString &msg)
 {
-    for(const QDebugEx::pimpl::QDebugSinkPtr& pSink : qAsConst(QDebugEx::getSingleton().d->m_sinks))
+    for(const QDebugEx::pimpl::QDebugSinkPtr& pSink : qAsConst(QDebugEx::instance()->d->m_sinks))
     {
         if(!pSink->isEnable())
             continue;

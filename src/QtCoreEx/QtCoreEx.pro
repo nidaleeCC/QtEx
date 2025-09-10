@@ -1,18 +1,14 @@
 QT += core
 
-EX_TEXT = 1
+EX_TEXT = 0
 message("build mode: $$EX_TEXT")
 
 
-equals(EX_TEXT,1){
-TEMPLATE = app      # 生成可执行程序 exe
-CONFIG += console
-SOURCES += \
-    $$PWD/../test/testMain.cpp
-}else{
 TEMPLATE = lib      # 表示生成库
 CONFIG += dll       # 生成动态库（DLL）
-}
+CONFIG += debug
+QMAKE_CXXFLAGS_DEBUG += -g
+
 
 TARGET = QtCoreEx  # DLL
 INCLUDEPATH += $$PWD
@@ -44,3 +40,15 @@ MOC_DIR = $$OBJECTS_DIR/moc
 RCC_DIR = $$OBJECTS_DIR/rcc
 UI_DIR  = $$OBJECTS_DIR/ui
 DESTDIR = $$OBJECTS_DIR/bin
+
+
+
+# 拷贝 DLL
+dlls.files = $$OUT_PWD/debug/bin/*.dll
+dlls.path  = $$PWD/../exmple/dll
+# 拷贝头文件
+headers.files = $$PWD/*.h
+headers.path  = $$PWD/../exmple/QtCoreEx
+# 注册安装目标
+INSTALLS += dlls headers
+
