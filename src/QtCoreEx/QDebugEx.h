@@ -3,6 +3,7 @@
 #include <QtCore/QDebug>
 #include <QGlobalEx.h>
 #include "QDesignPattern.h"
+#include <QtCore/QCoreApplication>
 
 namespace Qt{
     enum QDebugExSinkFlag
@@ -17,7 +18,14 @@ namespace Qt{
         Placeholder_4 = 0x80,
         Placeholder_5 = 0x100,
     };
+    Q_DECLARE_FLAGS(QDebugExSinkFlags, QDebugExSinkFlag)
+    enum QDebugExFileSinkMode
+    {
+        cache,  //缓存模式，效率更高，但不是立即写入文件
+        flash,  //刷新模式，效率比缓存模式低，但是是立即写入到文件
+    };
 }
+Q_DECLARE_OPERATORS_FOR_FLAGS(Qt::QDebugExSinkFlags)
 
 class QDebugSink;//基类
 class QDebugConsoleSink;    //控制台
@@ -34,37 +42,25 @@ class QTCOREX_EXPORT QDebugEx : public Singleton<QDebugEx>
     QDebugEx();
 public:
     /**
-     * @brief initConfig 初始化日志配置
-     * @param filePath   日志配置文件的文件名称
+     * @brief initLog 初始化日志配置
      * @param sinkFlag   sink标志，内置了 控制台 文件 udp 等输出方式。每种sink有默认的实现。修改其具体实现可以通过代码或配置文件修改
-     * todo:实现部分
+     * todo:目前支持控制台
      */
-    void initConfig(const QString& filePath,Qt::QDebugExSinkFlag sinkFlag);
+    void initLog(Qt::QDebugExSinkFlags sinkFlag = Qt::console);
 
     /**
-     * @brief addSink  添加一个用户自定义的sink
-     * @param flag     标志不能是内置的标志位,必须要大于0x100
-     * @param sink     需要实现out()函数的sink类
-     * todo:未实现
+     * @brief addSink  添加一个用户自定义的sink,传递的是new出来的对象,内部管理所有权，用户不需要释放
+     * @param sink     sink标志不能是内置的标志位,必须要大于0x100,还要满足位要求
+     * @return 添加成功返回true，添加失败返回false. 当sink标志和内部存储的sink标志相同，不允许添加
      */
-    void addSink(QDebugSink* sink);
+    bool addSink(QDebugSink* sink);
 
     /**
      * @brief sink 获取存在的sink,不存在返回nullptr
      * @param flag sink标志
      * @return
-     * todo:未实现
      */
     QDebugSink* sink(int flag);
-
-
-    /**
-     * @brief removeSink  移除一个sink,并返回所有权
-     * @param flag        sink标志
-     * @return
-     * todo:未实现
-     */
-    QDebugSink* removeSink(int flag);
 };
 
 /**
@@ -80,8 +76,11 @@ public:
     virtual ~QDebugFormatAttr() = default;
     QString attrName()const;
     virtual QString format(const QMessageLogContext & context,const QString& msg);
+
+    void reset(const std::function<QString(const QMessageLogContext & context,const QString& msg)>& newFormat);
 protected:
     QString m_attrName;
+    std::function<QString(const QMessageLogContext & context,const QString& msg)> m_newFormat;
 };
 
 
@@ -94,7 +93,6 @@ protected:
  */
 class QTCOREX_EXPORT QDebugSink
 {
-
     friend void ExMessageHandler(QtMsgType type, const QMessageLogContext &,const QString &msg);
     QEX_PIMPL_DECL
 public:
@@ -102,13 +100,13 @@ public:
 
     virtual ~QDebugSink() = default;
     /**
-     * @brief setEnable  设置是否启用管道，启用后，日志正常输出，否则不输出  todo:未实现
+     * @brief setEnable  设置是否启用管道，启用后，日志正常输出，否则不输出
      * @param isEnable
      */
     void setEnable(bool isEnable);
 
     /**
-     * @brief isEnable 返回当前的启用状态 true = 启用 todo:未实现
+     * @brief isEnable 返回当前的启用状态 true = 启用
      * @return
      */
     bool isEnable()const;
@@ -120,13 +118,9 @@ public:
      */
     QList<QSharedPointer<QDebugFormatAttr>>& attrs();
 
-    /**
-     * @brief registerConfig  注册配置文件字段  todo:未实现
-     * @param key
-     * @param value
-     * @return
-     */
-    bool registerConfig(const QString& key,const QString& value);
+    bool operator==(const QDebugSink& sink);
+
+    int flag()const;
 protected:
     virtual void out(const QString& fmtMsg) = 0;
 };
@@ -139,23 +133,50 @@ protected:
 class QTCOREX_EXPORT QDebugConsoleSink : public QDebugSink
 {
 public:
-    QDebugConsoleSink():QDebugSink(Qt::console){}
+    QDebugConsoleSink();
     virtual ~QDebugConsoleSink(){}
     virtual void out(const QString& fmtMsg)override;
-
-
 };
 
 /**
  * @brief The QDebugFileSink class
- * 文件日志管道，未实现
+ *
  */
 class QTCOREX_EXPORT QDebugFileSink : public QDebugSink
 {
+    QEX_PIMPL_DECL
+    virtual void out(const QString& fmtMsg)override;
 public:
-    QDebugFileSink():QDebugSink(Qt::file){}
-    virtual ~QDebugFileSink(){}
+    /**
+     * @brief QDebugFileSink
+     * @param filePath      日志文件存储的路径，不需要传文件名称，名称是内部决定。
+     * @param mode          写入模式
+     * @param reserveCount  文件保留数量，避免日志文件持续生成，只保留最新数量的日志文件
+     * @brief 如果文件检查失败，会打印错误信息。否则正常输出
+     * todo:
+     */
+    QDebugFileSink(Qt::QDebugExFileSinkMode mode = Qt::cache
+                  ,int reserveCount = 1
+                  ,const QString& filePath = QCoreApplication::applicationDirPath() + "/log"
+                  );
+    virtual ~QDebugFileSink();
+    /**
+     * @brief filePath
+     * @return 返回文件存储路径
+     */
+    QString filePath()const;
 
+    /**
+     * @brief mode
+     * @return 返回写入模式
+     */
+    Qt::QDebugExFileSinkMode mode()const;
+
+    /**
+     * @brief reserveCount
+     * @return 返回保留文件的数量。
+     */
+    int reserveCount()const;
 };
 
 #endif  //QDEBUGEX_H

@@ -363,12 +363,13 @@ public:
     Pimplptr(Args&&... args):data(new T(std::forward<Args>(args)...),[](T* ptr){delete ptr;}){}
     ~Pimplptr() {}
 
-    Pimplptr(Pimplptr const& o) :data(new T(*o)){}
-    Pimplptr(Pimplptr&  o):data(new T(*o)){}
-    Pimplptr(Pimplptr&& o):data(new T(std::move(*o))){}
 
-    Pimplptr& operator=(Pimplptr const& o) { **this = *o; return *this; }
+    Pimplptr(Pimplptr&& o):data(new T(std::move(*o))){}
     Pimplptr& operator=(Pimplptr&& o)      { **this = std::move(*o); return *this; }
+
+    //2025-9-9修改，MSVC对智能指针的拷贝被构造语义严格检查，删除了拷贝
+    Pimplptr(Pimplptr const& o) = delete;
+    Pimplptr& operator=(Pimplptr const& o) = delete;
 
     T      & operator*()        { return *data; }
     T const& operator*()  const { return *data; }
@@ -423,13 +424,13 @@ public:
      * @return 单例对象
      */
     template<typename... Args>
-    static Derived& getSingleton(Args&&... args) noexcept(std::is_nothrow_default_constructible<Derived>::value)
+    static Derived& getSingleton(Args&&... args) /*noexcept(std::is_nothrow_default_constructible<Derived>::value)*/
     {
         static Derived instance{std::forward<Args>(args)...};
         return instance;
     }
     template<typename... Args>
-    static Derived* instance(Args&&... args) noexcept(std::is_nothrow_default_constructible<Derived>::value)
+    static Derived* instance(Args&&... args) /*noexcept(std::is_nothrow_default_constructible<Derived>::value)*/
     {
         return &(getSingleton(std::forward<Args>(args)...));
     }

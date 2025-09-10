@@ -3,8 +3,10 @@ QT += core
 EX_TEXT = 1
 message("build mode: $$EX_TEXT")
 
+
 equals(EX_TEXT,1){
 TEMPLATE = app      # 生成可执行程序 exe
+CONFIG += console
 SOURCES += \
     $$PWD/../test/testMain.cpp
 }else{
