@@ -1,29 +1,20 @@
 ﻿#include "QDebugEx.h"
-#include <QtCore/QSharedPointer>
-#include <QtCore/QThread>
-#include <QtCore/QFile>
-#include <QtCore/QSysInfo>
-#include <QtCore/QDate>
-#include <QtCore/QDir>
-#ifdef Q_OS_WIN
-#include <windows.h>
-#include <fileapi.h>
-#else
-#endif
+#include "private/QDebugEx_p.h"
 
-intptr_t g_mainThreadID = 0L;
-void ExMessageHandler(QtMsgType type, const QMessageLogContext &context,const QString &msg);
-
-QEX_PIMPL_IMPORT(QDebugEx)
+QDebug operator<<(QDebug dbg, const QBool &t)
 {
-    using QDebugSinkPtr = QSharedPointer<QDebugSink>;
-    QList<QDebugSinkPtr> m_sinks;
-};
+    QDebugStateSaver saver(dbg);
+    dbg.nospace() << "QBool(" << t.error() << ")";
+    return dbg;
+}
+
 
 QDebugEx::QDebugEx()
-    :d()
-{
+    :d(){}
 
+QDebugEx::~QDebugEx()
+{
+    uninit();
 }
 
 QDebugEx *QDebugEx::instance()
@@ -31,51 +22,68 @@ QDebugEx *QDebugEx::instance()
     return Singleton<QDebugEx>::instance();
 }
 
+
 void QDebugEx::initLog(Qt::QDebugExSinkFlags sinkFlag)
 {
-    g_mainThreadID = reinterpret_cast<intptr_t>(reinterpret_cast<int*>(QThread::currentThreadId()));
+    QDebugThreadFormartAttr::g_mainThreadID = reinterpret_cast<intptr_t>(reinterpret_cast<int*>(QThread::currentThreadId()));
 
     if(sinkFlag & Qt::console)
         d->m_sinks << pimpl::QDebugSinkPtr(new QDebugConsoleSink);
     if(sinkFlag & Qt::file)
         d->m_sinks << pimpl::QDebugSinkPtr(new QDebugFileSink);
+    if(sinkFlag & Qt::udp)
+        qWarning() << ("udp sink未实现");
+    if(sinkFlag & Qt::tcp)
+        qWarning() << ("tcp sink未实现");
+    if(sinkFlag & Qt::dump)
+        qWarning() << ("dump sink未实现");
+    if(sinkFlag & Qt::Placeholder_2)
+        qWarning() << ("Placeholder_2 sink未实现");
+    if(sinkFlag & Qt::Placeholder_3)
+        qWarning() << ("Placeholder_3 sink未实现");
+    if(sinkFlag & Qt::Placeholder_4)
+        qWarning() << ("Placeholder_4 sink未实现");
+    if(sinkFlag & Qt::Placeholder_5)
+        qWarning() << ("Placeholder_5 sink未实现");
 
     if(d->m_sinks.size())
         qInstallMessageHandler(ExMessageHandler);
 }
 
-bool QDebugEx::addSink(QDebugSink *sink)
+QBool QDebugEx::addSink(QDebugSink *sink)
 {
-    bool res = false;
+    if(!sink)
+        return QBool(("sink是空指针"));
+    if(!__checkIsFlag(sink->flag()))
+        return QBool(("sink的标志位不满足位要求"));
+    if(sink->flag() <= 0x100)
+        return QBool(("sink的标志位<=0x100，是内置的标志位，不允许使用"));
+
     pimpl::QDebugSinkPtr pSink(sink);
-    if(std::find(d->m_sinks.begin(),d->m_sinks.end(),pSink) == d->m_sinks.end())
-    {
-        d->m_sinks << pSink;
-        res = true;
-    }
-    return res;
+    if(std::find(d->m_sinks.begin(),d->m_sinks.end(),pSink) != d->m_sinks.end())
+        return QBool(("sink的标志位在QDebugEx内部已存在"));
+
+    d->m_sinks << pSink;
+    return QBool();
 }
 
 QDebugSink* QDebugEx::sink(int flag)
 {
     QDebugSink* dSink = nullptr;
-    for(const pimpl::QDebugSinkPtr& pSink : d->m_sinks)
-    {
-        if(pSink->flag() == flag)
-        {
-            dSink = pSink.data();
-            break;
-        }
-    }
+    auto it = std::find_if(d->m_sinks.begin(),d->m_sinks.end(),[flag](const auto& sink){return sink->flag() == flag;});
+    if(it != d->m_sinks.end())
+        dSink = (*it).data();
     return dSink;
 }
 
+void QDebugEx::uninit()
+{
+    d->clear();
+    qInstallMessageHandler(0);
+}
 
 QDebugFormatAttr::QDebugFormatAttr(const QString& attrName)
-    :m_attrName(attrName),m_newFormat(nullptr)
-{
-
-}
+    :m_attrName(attrName),m_newFormat(nullptr){}
 
 QString QDebugFormatAttr::attrName() const
 {
@@ -84,10 +92,7 @@ QString QDebugFormatAttr::attrName() const
 
 QString QDebugFormatAttr::format(const QMessageLogContext & context,const QString& msg)
 {
-    Q_UNUSED(context)
-    if(m_newFormat)
-        return m_newFormat(context,msg);
-    return QString(m_attrName).arg(msg);
+    return m_newFormat ? m_newFormat(context,msg) : QString(m_attrName).arg(msg);
 }
 
 void QDebugFormatAttr::reset(const std::function<QString (const QMessageLogContext &, const QString &)> &newFormat)
@@ -95,150 +100,8 @@ void QDebugFormatAttr::reset(const std::function<QString (const QMessageLogConte
     m_newFormat = newFormat;
 }
 
-
-
-class QDebugNoFormartAttr : public QDebugFormatAttr
-{
-    int m_count;
-public:
-    QDebugNoFormartAttr()
-        :QDebugFormatAttr("[No.%1] "),m_count(0)
-    {
-    }
-
-    virtual QString format(const QMessageLogContext & context,const QString& msg)override
-    {
-        Q_UNUSED(context)
-        Q_UNUSED(msg)
-        return QDebugFormatAttr::format(context,QString::number(m_count++));
-    }
-};
-
-
-class QDebugMsgFormartAttr : public QDebugFormatAttr
-{
-public:
-    QDebugMsgFormartAttr()
-        :QDebugFormatAttr("[msg：%1] ")//,m_isWin7(false)
-    {
-    }
-
-    virtual QString format(const QMessageLogContext & context,const QString& msg)override
-    {
-        Q_UNUSED(context)
-        return QDebugFormatAttr::format(context,msg);
-    }
-};
-
-class QDebugFuncFormartAttr : public QDebugFormatAttr
-{
-public:
-    QDebugFuncFormartAttr()
-        :QDebugFormatAttr("[func：%1] ")
-    {
-
-    }
-
-    virtual QString format(const QMessageLogContext & context,const QString& msg)override
-    {
-        Q_UNUSED(msg)
-        return QDebugFormatAttr::format(context,context.function);
-    }
-};
-
-class QDebugFileFormartAttr : public QDebugFormatAttr
-{
-public:
-    QDebugFileFormartAttr()
-        :QDebugFormatAttr("[file:%1] ")
-    {
-
-    }
-
-    virtual QString format(const QMessageLogContext & context,const QString& msg)override
-    {
-        Q_UNUSED(msg)
-        return QDebugFormatAttr::format(context,QString(context.file).split('\\').last());
-    }
-};
-
-class QDebugLineFormartAttr : public QDebugFormatAttr
-{
-public:
-    QDebugLineFormartAttr()
-        :QDebugFormatAttr("[line:%1] ")
-    {
-
-    }
-
-    virtual QString format(const QMessageLogContext & context,const QString& msg)override
-    {
-        Q_UNUSED(msg)
-        return QDebugFormatAttr::format(context,QString::number(context.line));
-    }
-};
-
-class QDebugThreadFormartAttr : public QDebugFormatAttr
-{
-public:
-    QDebugThreadFormartAttr()
-        :QDebugFormatAttr("[thread:%1] ")
-    {
-
-    }
-
-    virtual QString format(const QMessageLogContext & context,const QString& msg)override
-    {
-        Q_UNUSED(context)
-        Q_UNUSED(msg)
-        QString fmtstr;
-        intptr_t tid = reinterpret_cast<intptr_t>(reinterpret_cast<int*>(QThread::currentThreadId()));
-        if(g_mainThreadID && g_mainThreadID == tid)
-            fmtstr = QString("(main)%1").arg(tid);
-        else
-            fmtstr = QString("(sub)%1").arg(tid);
-        return QDebugFormatAttr::format(context,fmtstr);
-    }
-};
-
-QEX_PIMPL_IMPORT(QDebugSink)
-{
-    using QDebugFormatAttrPtr = QSharedPointer<QDebugFormatAttr>;
-    using QDebugFormatAttrPtrs = QList<QDebugFormatAttrPtr>;
-    Qt::QDebugExSinkFlag    m_flag;
-    bool                    m_isEnable;
-    QDebugFormatAttrPtrs    m_formats;
-    QMap<QString,QString>   m_cfgPairMap; //<key,value>
-
-    pimpl(Qt::QDebugExSinkFlag flag)
-        :m_flag(flag),m_isEnable(true),m_formats({QDebugFormatAttrPtr(new QDebugNoFormartAttr)
-                                                 ,QDebugFormatAttrPtr(new QDebugThreadFormartAttr)
-                                                 ,QDebugFormatAttrPtr(new QDebugFuncFormartAttr)
-                                                 ,QDebugFormatAttrPtr(new QDebugFileFormartAttr)
-                                                 ,QDebugFormatAttrPtr(new QDebugLineFormartAttr)
-                                                 ,QDebugFormatAttrPtr(new QDebugMsgFormartAttr)
-          })
-    {
-
-    }
-
-    QString attrToFmt(const QMessageLogContext & context,const QString &msg)
-    {
-        QString fmt;
-        for(const auto& pAttr : qAsConst(m_formats))
-        {
-            fmt += pAttr->format(context,msg);
-        }
-        return fmt;
-    }
-};
-
-
-
 QDebugSink::QDebugSink(Qt::QDebugExSinkFlag flag)
-    :d(flag)
-{
-}
+    :d(flag){}
 
 void QDebugSink::setEnable(bool isEnable)
 {
@@ -270,163 +133,30 @@ QDebugConsoleSink::QDebugConsoleSink()
     :QDebugSink(Qt::file)
 {
     bool isWin7 = QSysInfo::prettyProductName().contains("Windows 7");
-    for(auto& attr : this->attrs())
-    {
-        if(attr->attrName().contains("msg")) //重写msg属性，支持颜色
-        {
-            attr->reset([=](const QMessageLogContext& context,const QString& msg){
-                Q_UNUSED(context);
-                QString fmt = isWin7 ? msg :QString("msg:\033[31m%1\033[0m").arg(msg);
-                return fmt;
-            });
-            break;
-        }
-    }
-
+    auto it = std::find_if(attrs().begin(),attrs().end(),[](const auto &attr){ return attr->attrName().contains("msg"); });
+    if(it != this->attrs().end()) {
+        (*it)->reset([=](const QMessageLogContext &, const QString &msg){
+            return isWin7 ? msg : QString("msg:\033[31m%1\033[0m").arg(msg);
+        });}
 }
 
 void QDebugConsoleSink::out(const QString& fmtMsg)
 {
-    fprintf(stdout, "%s\n", fmtMsg.toLocal8Bit().constData());
-    fflush(stdout);
+    __fprintfEx(fmtMsg);
 }
 
 void ExMessageHandler(QtMsgType type, const QMessageLogContext & context,const QString &msg)
 {
+    const QString utf8msg = msg.toUtf8();
     for(const QDebugEx::pimpl::QDebugSinkPtr& pSink : qAsConst(QDebugEx::instance()->d->m_sinks))
     {
         if(!pSink->isEnable())
             continue;
         switch (type)
         {
-            case QtDebugMsg:
-            {
-                pSink->out(pSink->d->attrToFmt(context,msg));
-                break;
-            }
-            case QtWarningMsg:
-            case QtCriticalMsg:
-            case QtFatalMsg:
-            case QtInfoMsg:
-            default:
-            {
-                fprintf(stdout,"%s\n",msg.toLocal8Bit().constData());
-                break;
-            }
+            case QtDebugMsg:{ pSink->out(pSink->d->attrToFmt(context,utf8msg)); break;}
+            case QtWarningMsg:case QtCriticalMsg: case QtFatalMsg:case QtInfoMsg:
+            default:{__fprintfEx(utf8msg);break;}
         }
     }
-}
-
-QEX_PIMPL_IMPORT(QDebugFileSink)
-{
-    QSharedPointer<QFile> m_file;
-    Qt::QDebugExFileSinkMode m_mode;
-    int m_reserveCount;
-    pimpl(QDebugFileSink* q,const QString& filePath,Qt::QDebugExFileSinkMode mode,int reserveCount)
-        :m_mode(mode),m_reserveCount(reserveCount)
-    {
-        int cIndex = 0;
-        if(!removeLogFiles(filePath,cIndex))
-        {
-            q->setEnable(false);
-            return;
-        }
-
-        QString fileName = filePath + "/" + QDate::currentDate().toString(Qt::ISODate) + QString("_%1_log.txt").arg(cIndex, 5, 10, QChar('0'));
-        m_file = QSharedPointer<QFile>::create(fileName);
-
-        if (!m_file->open(QIODevice::Append | QIODevice::Text))
-        {
-            QString str = QString("不能打开%1文件").arg(filePath);
-            qDebug() << str;
-            return;
-        }
-    }
-    //只保留最新的文件
-    bool removeLogFiles(const QString &path,int& index)
-    {
-        QDir dir(path);
-        if(!dir.exists())
-        {
-            dir.mkdir(path);
-        }
-        QFileInfoList list = dir.entryInfoList(QStringList() << "*_log.txt",
-                                       QDir::Files | QDir::NoDotAndDotDot);
-        index = 0;
-        //如果文件数量>=保留的数量 ，移除差值
-        if(m_reserveCount - list.size() <= 0)
-        {
-            int removeCount = m_reserveCount - list.size() + 1;
-            // 按创建时间升序排序（最早的排在前面）
-            std::sort(list.begin(), list.end(), [](const QFileInfo &a, const QFileInfo &b) {
-                return a.birthTime() < b.birthTime();
-            });
-            for(int i = 0; i < removeCount;i++)
-            {
-                const QFileInfo &info = list[i];
-                if (!QFile::remove(info.absoluteFilePath())) {
-                   qDebug() << "删除失败:" << info.fileName();
-                }
-            }
-        }
-        //获取最后一个文件名称提取索引
-        if(list.size())
-        {
-            QString lastFileName = list.last().fileName();
-            QStringList parts = lastFileName.split("_");
-            if(parts.size() > 1)
-            {
-               index = parts[1].toInt() + 1;
-            }
-        }
-
-        return true;
-    }
-
-    void flush()
-    {
-        m_file->flush();
-#ifdef Q_OS_WIN
-        FlushFileBuffers(reinterpret_cast<HANDLE>(m_file->handle())); // 强制落盘
-#else
-        ::fsync(m_file->handle()); // Unix/Linux 强制落盘
-#endif
-    }
-};
-
-QDebugFileSink::QDebugFileSink(Qt::QDebugExFileSinkMode mode,int reserveCount,const QString& filePath)
-    :QDebugSink(Qt::file),d(this,filePath,mode,reserveCount)
-{
-
-}
-
-QDebugFileSink::~QDebugFileSink()
-{
-    d->flush();
-}
-
-void QDebugFileSink::out(const QString &fmtMsg)
-{
-    QByteArray data = fmtMsg.toUtf8() + "\n";
-    d->m_file->write(data);
-    if(d->m_mode == Qt::flash)
-        d->flush();
-}
-
-QString QDebugFileSink::filePath() const
-{
-    QString fileName;
-    if(d->m_file)
-        fileName = d->m_file->fileName();
-    return fileName;
-}
-
-Qt::QDebugExFileSinkMode QDebugFileSink::mode() const
-{
-    return d->m_mode;
-}
-
-int QDebugFileSink::reserveCount() const
-{
-    return d->m_reserveCount;
 }

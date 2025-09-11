@@ -4,8 +4,10 @@ TEMPLATE = app
 TARGET = exmple
 INCLUDEPATH += $$PWD
 
-# HEADERS += \
+HEADERS += \
+    $$PWD/QtCoreExmple/QDebugExExmple.h
 SOURCES += \
+    $$PWD/QtCoreExmple/QDebugExExmple.cpp\
     $$PWD/main.cpp
 
 LIBS += -L$$PWD/dll -lQtCoreEx

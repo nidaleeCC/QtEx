@@ -3,6 +3,7 @@
 #include <QtCore/QDebug>
 #include "QGlobalEx.h"
 #include "QDesignPattern.h"
+#include "QBool.h"
 #include <QtCore/QCoreApplication>
 
 namespace Qt{
@@ -34,6 +35,7 @@ class QDebugUdpSink;//保留类名
 class QDebugTcpSink;//保留类名
 class QDebugdumpSink;//保留类名
 
+
 class QTCOREX_EXPORT QDebugEx : public Singleton<QDebugEx>
 {
     friend class Singleton<QDebugEx>;
@@ -41,6 +43,8 @@ class QTCOREX_EXPORT QDebugEx : public Singleton<QDebugEx>
     QEX_PIMPL_DECL
     QDebugEx();
 public:
+    ~QDebugEx();
+
     static QDebugEx* instance();
     /**
      * @brief initLog 初始化日志配置
@@ -54,7 +58,7 @@ public:
      * @param sink     sink标志不能是内置的标志位,必须要大于0x100,还要满足位要求
      * @return 添加成功返回true，添加失败返回false. 当sink标志和内部存储的sink标志相同，不允许添加
      */
-    bool addSink(QDebugSink* sink);
+    QBool addSink(QDebugSink* sink);
 
     /**
      * @brief sink 获取存在的sink,不存在返回nullptr
@@ -62,6 +66,11 @@ public:
      * @return
      */
     QDebugSink* sink(int flag);
+
+    /**
+     * @brief 清理资源，不主动调用，也会在析构时调用。
+     */
+    void uninit();
 };
 
 /**
@@ -180,4 +189,7 @@ public:
     int reserveCount()const;
 };
 
+
+//内部类型的流支持
+QTCOREX_EXPORT QDebug operator<<(QDebug dbg, const QBool &t);
 #endif  //QDEBUGEX_H

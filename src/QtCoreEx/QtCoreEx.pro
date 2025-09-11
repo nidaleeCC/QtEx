@@ -16,11 +16,15 @@ INCLUDEPATH += $$PWD
 DEFINES += QTCOREX_LIBRARY
 
 HEADERS += \
+    $$PWD/private/QDebugEx_p.h\
     $$PWD/QDebugEx.h\
+    $$PWD/QBool.h\
     $$PWD/QGlobalEx.h\
     $$PWD/QDesignPattern.h
 
 SOURCES += \
+    $$PWD/private/QDebugEx_p.cpp\
+    $$PWD/QBool.cpp\
     $$PWD/QDebugEx.cpp
 
 
@@ -51,4 +55,9 @@ headers.files = $$PWD/*.h
 headers.path  = $$PWD/../exmple/QtCoreEx
 # 注册安装目标
 INSTALLS += dlls headers
+
+message($$dlls.files)
+message($$dlls.path)
+message($$headers.files)
+message($$headers.path)
 
